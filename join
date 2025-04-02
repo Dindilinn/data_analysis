@@ -1,0 +1,55 @@
+Задание на JOIN
+Для каждого пользователя рассчитайте следующие показатели:
+* общее число заказов — колонку назовите orders_count
+* среднее количество товаров в заказе — avg_order_size
+* суммарную стоимость всех покупок — sum_order_value
+* среднюю стоимость заказа — avg_order_value
+* минимальную стоимость заказа — min_order_value
+* максимальную стоимость заказа — max_order_value
+Полученный результат отсортируйте по возрастанию id пользователя.
+Добавьте в запрос оператор LIMIT и выведите только первые 1000 строк результирующей таблицы.
+Помните, что в расчётах мы по-прежнему учитываем только неотменённые заказы. При расчёте средних значений, округляйте их до двух знаков после запятой.
+Поля в результирующей таблице: 
+user_id, orders_count, avg_order_size, sum_order_value, avg_order_value, min_order_value, max_order_value
+with products_in_orders as (
+-- Шаг 1: Развернуть массивы товаров в заказах
+SELECT order_id,
+       unnest(product_ids) as product_id
+FROM   orders), product_price as (
+-- Шаг 2: Присоединить цены продуктов
+SELECT pio.order_id as order_id,
+       pio.product_id as product_id,
+       p.price as price
+FROM   products_in_orders pio
+    LEFT JOIN products p
+        ON pio.product_id = p.product_id), order_costs as (
+        -- Шаг 3: Рассчитать стоимость каждого заказа
+SELECT order_id,
+       sum(price) as order_price
+FROM   product_price
+GROUP BY order_id), filtered_orders as (
+-- Шаг 4: Фильтрация неотменённых заказов
+SELECT ua.user_id,
+       ua.order_id,
+       o.product_ids
+FROM   user_actions ua
+    LEFT JOIN orders o
+        ON ua.order_id = o.order_id
+WHERE  ua.order_id not in (SELECT order_id
+                           FROM   user_actions
+                           WHERE  action = 'cancel_order'))
+-- Шаг 5: Расчёт метрик для каждого пользователя
+SELECT fo.user_id as user_id,
+       count(fo.order_id) as orders_count,
+       round(avg(array_length(o.product_ids, 1)), 2) as avg_order_size,
+       sum(oc.order_price) as sum_order_value,
+       round(avg(oc.order_price), 2) as avg_order_value,
+       min(oc.order_price) as min_order_value,
+       max(oc.order_price) as max_order_value
+FROM   filtered_orders fo
+    LEFT JOIN order_costs oc
+        ON fo.order_id = oc.order_id
+    LEFT JOIN orders o
+        ON fo.order_id = o.order_id
+GROUP BY fo.user_id
+ORDER BY fo.user_id limit 1000;
